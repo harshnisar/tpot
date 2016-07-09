@@ -6,26 +6,6 @@ from sklearn.externals import joblib
 
 from os import path
 
-def get_pipelines(X, y, k=10):
-    """Generates selected metafeatures for given dataset
-    
-    Returns a row of metafeatures.
-    """
-    
-    df = pd.concat([X, y], axis=1)
-    metafeatures = get_metafeatures(df)
-    
-    ## Load the KNN here, we assume we unpickle it
-    clf = joblib.load(path.join('seed_models','neighbour_model'))
-    encoder = joblib.load(path.join('seed_models','encoder_model'))
-    y = joblib.load(path.join('seed_models','neighbour_y'))
-
-    dist, ind = clf.kneighbors(metafeatures, n_neighbors=k)
-    y_ind = y[ind[0]]
-    
-    for seed in encoder.inverse_transform(y_ind):
-        yield seed    
-    
     
 def get_metafeatures(df):
     
