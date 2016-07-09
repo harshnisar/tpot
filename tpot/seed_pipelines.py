@@ -4,6 +4,7 @@ from dataset_describe import Dataset
 from collections import OrderedDict
 from sklearn.externals import joblib
 
+from os import path
 
 def get_pipelines(X, y, k=10):
     """Generates selected metafeatures for given dataset
@@ -15,15 +16,15 @@ def get_pipelines(X, y, k=10):
     metafeatures = get_metafeatures(df)
     
     ## Load the KNN here, we assume we unpickle it
-    clf = joblib.load('neighbour_model')
-    encoder = joblib.load('encoder_model')
-    y_train = joblib.load('neighbour_y_train')
+    clf = joblib.load(path.join('seed_models','neighbour_model'))
+    encoder = joblib.load(path.join('seed_models','encoder_model'))
+    y = joblib.load(path.join('seed_models','neighbour_y'))
 
     dist, ind = clf.kneighbors(metafeatures, n_neighbors=k)
-    y_ind = y_train[ind[0]]
+    y_ind = y[ind[0]]
     
-    return encoder.inverse_transform(y_ind)
-    
+    for seed in encoder.inverse_transform(y_ind):
+        yield seed    
     
     
 def get_metafeatures(df):
@@ -38,7 +39,7 @@ def get_metafeatures(df):
        u'skew_median', u'skew_min', u'skew_skew', u'skew_std']
     
 
-    dataset = Dataset(df, prediction_type='classification')
+    dataset = Dataset(df, prediction_type='classification', dependent_col = 'class')
    
     meta_features = OrderedDict()
     for i in dir(dataset):
@@ -49,4 +50,4 @@ def get_metafeatures(df):
 #                 print i
                 meta_features[i] = result()
     
-    return pd.Series(meta_features)
+    return pd.DataFrame(meta_features, index=[0])

@@ -50,6 +50,8 @@ from update_checker import update_check
 from ._version import __version__
 from .export_utils import unroll_nested_fuction_calls, generate_import_code, replace_function_calls
 from .decorators import _gp_new_generation
+from .seed_pipelines import get_metafeatures
+
 
 import deap
 from deap import algorithms, base, creator, tools, gp
@@ -70,7 +72,7 @@ class TPOT(object):
     def __init__(self, population_size=100, generations=100,
                  mutation_rate=0.9, crossover_rate=0.05,
                  random_state=0, verbosity=0, scoring_function=None,
-                 disable_update_check=False):
+                 disable_update_check=False, seed_method='pool'):
         """Sets up the genetic programming algorithm for pipeline optimization.
 
         Parameters
@@ -125,6 +127,7 @@ class TPOT(object):
         self.mutation_rate = mutation_rate
         self.crossover_rate = crossover_rate
         self.verbosity = verbosity
+        self._seed_method = seed_method
 
         self.pbar = None
         self.gp_generation = 0
@@ -200,13 +203,14 @@ class TPOT(object):
 
         self._toolbox = base.Toolbox()
         self._toolbox.register('expr', self._gen_grow_safe, pset=self._pset, min_=1, max_=3)
-        self._toolbox.register('individual', tools.initIterate, creator.Individual, self._toolbox.expr)
-        self._toolbox.register('population', tools.initRepeat, list, self._toolbox.individual)
-        self._toolbox.register('compile', gp.compile, pset=self._pset)
-        self._toolbox.register('select', self._combined_selection_operator)
-        self._toolbox.register('mate', gp.cxOnePoint)
-        self._toolbox.register('expr_mut', self._gen_grow_safe, min_=0, max_=3)
-        self._toolbox.register('mutate', self._random_mutation_operator)
+        #self._toolbox.register('seed_individual', gp.PrimitiveTree.from_string, self._seed_generator.next(), pset=self._pset)
+        #self._toolbox.register('individual', tools.initIterate, creator.Individual, self._toolbox.seed_individual)
+        #self._toolbox.register('population', tools.initRepeat, list, self._toolbox.individual)
+        #self._toolbox.register('compile', gp.compile, pset=self._pset)
+        #self._toolbox.register('select', self._combined_selection_operator)
+        #self._toolbox.register('mate', gp.cxOnePoint)
+        #self._toolbox.register('expr_mut', self._gen_grow_safe, min_=0, max_=3)
+        #self._toolbox.register('mutate', self._random_mutation_operator)
 
         self.hof = None
 
@@ -239,6 +243,33 @@ class TPOT(object):
             # Store the training features and classes for later use
             self._training_features = features
             self._training_classes = classes
+
+            if self._seed_method == 'pool':
+                self._seeds = None
+                self._expert_seed_inidividual_pool_init()
+                self._toolbox.register('seed_individual', gp.PrimitiveTree.from_string, self._expert_seed_individual_from_pool(), pset=self._pset)        
+                self._toolbox.register('individual', tools.initIterate, creator.Individual, self._toolbox.seed_individual)
+            
+            
+            #Method - two
+            if self._seed_method == 'generator':
+                self._seed_generator = self._expert_seed_individual()
+                self._toolbox.register('seed_individual', gp.PrimitiveTree.from_string, self._seed_generator.next(), pset=self._pset)
+                self._toolbox.register('individual', tools.initIterate, creator.Individual, self._toolbox.seed_individual)
+            
+
+            if self._seed_method == 'random':
+                self._toolbox.register('individual', tools.initIterate, creator.Individual, self._toolbox.expr)
+
+
+            self._toolbox.register('population', tools.initRepeat, list, self._toolbox.individual)
+            self._toolbox.register('compile', gp.compile, pset=self._pset)
+            self._toolbox.register('select', self._combined_selection_operator)
+            self._toolbox.register('mate', gp.cxOnePoint)
+            self._toolbox.register('expr_mut', self._gen_grow_safe, min_=0, max_=3)
+            self._toolbox.register('mutate', self._random_mutation_operator)
+
+
 
             training_testing_data = pd.DataFrame(data=features)
             training_testing_data['class'] = classes
@@ -481,6 +512,109 @@ class TPOT(object):
 
         with open(output_file_name, 'w') as output_file:
             output_file.write(pipeline_text)
+
+    def _expert_seed_inidividual_pool_init(self):
+        from sklearn.externals import joblib
+        from os import path
+        from os import getcwd
+
+        #resources_dir = os.getcwd() + "/static/res/" # main resource directory
+        #input = joblib.load(resources_dir + 'classifier.pkl')
+
+        cwd = getcwd()
+
+
+        # X and y need to be scale
+        X = pd.DataFrame(self._training_features)
+        y = pd.DataFrame(self._training_classes)
+        training_data = pd.DataFrame(self._training_features)
+        training_data['class'] = self._training_classes
+        #print(X)
+        #print(y)
+
+
+        #print('gencalled')
+
+        k = self.population_size
+        #training_data = pd.concat([X, y], axis=1)
+        
+        metafeatures = get_metafeatures(training_data)
+        
+        ##  print(metafeatures)
+        ## Load the KNN here, we assume we unpickle it
+        clf = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_model'))
+        encoder = joblib.load(path.join(cwd,'tpot','seed_models','encoder_model'))
+        y = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_y'))
+
+
+        #clf = joblib.load('neighbour_model')
+        #encoder = joblib.load('encoder_model')
+        #y = joblib.load('neighbour_y')
+
+        #print(metafeatures.shape)
+
+        dist, ind = clf.kneighbors(metafeatures, n_neighbors=k)
+        y_ind = y[ind[0]]
+        
+        seeds = [seed for seed in encoder.inverse_transform(y_ind)]
+        self._seeds = seeds
+        return
+
+    def _expert_seed_individual_from_pool(self):
+        print('called')
+        return self._seeds[random.randint(0, len(self._seeds) - 1)]
+
+
+
+    def _expert_seed_individual(self):
+
+        from sklearn.externals import joblib
+        from os import path
+        from os import getcwd
+
+        #resources_dir = os.getcwd() + "/static/res/" # main resource directory
+        #input = joblib.load(resources_dir + 'classifier.pkl')
+
+        cwd = getcwd()
+
+
+        # X and y need to be scale
+        X = pd.DataFrame(self._training_features)
+        y = pd.DataFrame(self._training_classes)
+        training_data = pd.DataFrame(self._training_features)
+        training_data['class'] = self._training_classes
+        #print(X)
+        #print(y)
+
+
+        #print('gencalled')
+
+        k = self.population_size
+        #training_data = pd.concat([X, y], axis=1)
+        
+        metafeatures = get_metafeatures(training_data)
+        
+        ##  print(metafeatures)
+        ## Load the KNN here, we assume we unpickle it
+        clf = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_model'))
+        encoder = joblib.load(path.join(cwd,'tpot','seed_models','encoder_model'))
+        y = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_y'))
+
+
+        #clf = joblib.load('neighbour_model')
+        #encoder = joblib.load('encoder_model')
+        #y = joblib.load('neighbour_y')
+
+        #print(metafeatures.shape)
+
+        dist, ind = clf.kneighbors(metafeatures, n_neighbors=k)
+        y_ind = y[ind[0]]
+        
+        for seed in encoder.inverse_transform(y_ind):
+            #yield deap.gp.PrimitiveTree.from_string(seed, self._pset)
+            print(seed)
+            yield seed   
+
 
     def _decision_tree(self, input_df, min_weight):
         """Fits a decision tree classifier
