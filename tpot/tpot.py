@@ -542,10 +542,16 @@ class TPOT(object):
         
         ##  print(metafeatures)
         ## Load the KNN here, we assume we unpickle it
-        clf = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_model'))
-        encoder = joblib.load(path.join(cwd,'tpot','seed_models','encoder_model'))
-        y = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_y'))
+        cur_version = sys.version_info.major
 
+        if cur_version ==2:
+            clf = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_model'))
+            encoder = joblib.load(path.join(cwd,'tpot','seed_models','encoder_model'))
+            y = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_y'))
+        elif cur_version == 3:
+            clf = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_model_py3'))
+            encoder = joblib.load(path.join(cwd,'tpot','seed_models','encoder_model_py3'))
+            y = joblib.load(path.join(cwd,'tpot','seed_models','neighbour_y_py3'))
 
         #clf = joblib.load('neighbour_model')
         #encoder = joblib.load('encoder_model')

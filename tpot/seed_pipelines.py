@@ -1,6 +1,6 @@
 import pandas as pd
 
-from dataset_describe import Dataset
+from .dataset_describe import Dataset
 from collections import OrderedDict
 from sklearn.externals import joblib
 
