@@ -128,6 +128,7 @@ class TPOT(object):
         self.crossover_rate = crossover_rate
         self.verbosity = verbosity
         self._seed_method = seed_method
+        self.pool_called = 0
 
         self.pbar = None
         self.gp_generation = 0
@@ -247,7 +248,8 @@ class TPOT(object):
             if self._seed_method == 'pool':
                 self._seeds = None
                 self._expert_seed_inidividual_pool_init()
-                self._toolbox.register('seed_individual', gp.PrimitiveTree.from_string, self._expert_seed_individual_from_pool(), pset=self._pset)        
+                # self._toolbox.register('seed_individual', gp.PrimitiveTree.from_string, self._expert_seed_individual_from_pool(), pset=self._pset)        
+                self._toolbox.register('seed_individual', self._expert_seed_individual_from_pool)        
                 self._toolbox.register('individual', tools.initIterate, creator.Individual, self._toolbox.seed_individual)
             
             
@@ -567,9 +569,9 @@ class TPOT(object):
         return
 
     def _expert_seed_individual_from_pool(self):
-        print('called')
-        return self._seeds[random.randint(0, len(self._seeds) - 1)]
-
+        self.pool_called = self.pool_called + 1
+        pooled_pipe =  self._seeds[random.randint(0, len(self._seeds) - 1)]
+        return gp.PrimitiveTree.from_string(pooled_pipe, self._pset)
 
 
     def _expert_seed_individual(self):
